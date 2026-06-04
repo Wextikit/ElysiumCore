@@ -289,10 +289,9 @@ namespace ElysiumModMenu
         {
             public static void Postfix(TextBoxTMP __instance)
             {
-                __instance.allowAllCharacters = true;
-                __instance.AllowSymbols = true;
-
-                __instance.AllowEmail = true;
+                __instance.allowAllCharacters = ElysiumModMenuGUI.allowLinksAndSymbols;
+                __instance.AllowSymbols = ElysiumModMenuGUI.allowLinksAndSymbols;
+                __instance.AllowEmail = ElysiumModMenuGUI.allowLinksAndSymbols;
             }
         }
         [HarmonyPatch(typeof(ChatController), nameof(ChatController.Update))]
@@ -307,9 +306,9 @@ namespace ElysiumModMenu
                     __instance.timeSinceLastMessage = 0.9f;
                 }
 
-                __instance.freeChatField.textArea.allowAllCharacters = true;
-                __instance.freeChatField.textArea.AllowSymbols = true;
-                __instance.freeChatField.textArea.AllowEmail = true;
+                __instance.freeChatField.textArea.allowAllCharacters = ElysiumModMenuGUI.allowLinksAndSymbols;
+                __instance.freeChatField.textArea.AllowSymbols = ElysiumModMenuGUI.allowLinksAndSymbols;
+                __instance.freeChatField.textArea.AllowEmail = ElysiumModMenuGUI.allowLinksAndSymbols;
 
                 __instance.freeChatField.textArea.characterLimit = ElysiumModMenuGUI.enableExtendedChat ? 120 : 100;
             }
@@ -692,7 +691,7 @@ namespace ElysiumModMenu
             GUILayout.Space(2);
             enableFastChat = DrawToggle(enableFastChat, L("Fast Chat (3.1 to 2.1", "Быстрый чат (c 3.1 до 2.1)"), 280);
             GUILayout.Space(2);
-            allowLinksAndSymbols = DrawToggle(allowLinksAndSymbols, L("Allow Links & Symbols", "Разрешить ссылки и символы"), 280);
+            allowLinksAndSymbols = DrawToggle(allowLinksAndSymbols, L("Unlock Extra Characters", "Разрешить все символы"), 280);
             GUILayout.Space(2);
             enableSpellCheck = DrawToggle(enableSpellCheck, L("Spell Check (Basic)", "Проверка орфографии (Базовая)"), 280);
             GUILayout.EndVertical();
@@ -3959,7 +3958,7 @@ namespace ElysiumModMenu
             GUILayout.Space(3);
             enableFastChat = DrawToggle(enableFastChat, L("Fast Chat", "Быстрый чат"), 230);
             GUILayout.Space(3);
-            allowLinksAndSymbols = DrawToggle(allowLinksAndSymbols, L("Links & Symbols", "Ссылки и символы"), 230);
+            allowLinksAndSymbols = DrawToggle(allowLinksAndSymbols, L("Unlock Extra Characters", "Все символы"), 230);
             GUILayout.Space(3);
             enableSpellCheck = DrawToggle(enableSpellCheck, L("Spell Check", "Проверка орфографии"), 230);
 
@@ -6932,6 +6931,13 @@ namespace ElysiumModMenu
             {
                 if (box == null) return true;
 
+                string compositionString = Input.compositionString;
+                if (!string.IsNullOrEmpty(compositionString))
+                {
+                    result = true;
+                    return false;
+                }
+
                 string input = isPastingChatInput ? GUIUtility.systemCopyBuffer : Input.inputString;
                 if (string.IsNullOrEmpty(input)) return true;
 
@@ -6943,9 +6949,10 @@ namespace ElysiumModMenu
                 char currentChar = text[currentPasteCharPos];
                 currentPasteCharPos = currentPasteCharPos >= text.Length - 1 ? 0 : currentPasteCharPos + 1;
 
-                if (enableClipboard || allowLinksAndSymbols)
+                if (allowLinksAndSymbols)
                 {
-                    result = currentChar != '\b' && currentChar != '\r' && currentChar != '\n';
+                    HashSet<char> blockedSymbols = new HashSet<char> { '\b', '\r', '\n', '>', '<', '[' };
+                    result = !blockedSymbols.Contains(currentChar);
                     return false;
                 }
 
@@ -6959,9 +6966,9 @@ namespace ElysiumModMenu
             public static void Postfix(TextBoxTMP __instance)
             {
                 if (__instance == null) return;
-                __instance.allowAllCharacters = true;
-                __instance.AllowSymbols = true;
-                __instance.AllowEmail = true;
+                __instance.allowAllCharacters = ElysiumModMenuGUI.allowLinksAndSymbols;
+                __instance.AllowSymbols = ElysiumModMenuGUI.allowLinksAndSymbols;
+                __instance.AllowEmail = ElysiumModMenuGUI.allowLinksAndSymbols;
             }
         }
 
@@ -7202,6 +7209,7 @@ namespace ElysiumModMenu
             if (autoChatEveryone)
             {
                 GUILayout.BeginHorizontal();
+                GUILayout.Label($"Delay: {autoChatEveryoneDelay:0.0}s", toggleLabelStyle, GUILayout.Width(95));
                 autoChatEveryoneDelay = GUILayout.HorizontalSlider(autoChatEveryoneDelay, 0f, 10f, sliderStyle, sliderThumbStyle, GUILayout.Width(240));
                 GUILayout.EndHorizontal();
             }

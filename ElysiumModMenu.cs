@@ -707,6 +707,11 @@ namespace ElysiumModMenu
             enableChatLog = DrawToggle(enableChatLog, L("Save Chat Log to File", "Сохранять лог чата в файл"), 280);
             GUILayout.Space(2);
             enableChatDarkMode = DrawToggle(enableChatDarkMode, L("Dark Chat Theme", "Темная тема чата"), 280);
+            if (enableChatDarkMode && GUILayout.Button(L("Turn Off Dark Chat", "Выключить темный чат"), btnStyle, GUILayout.Width(180), GUILayout.Height(24)))
+            {
+                enableChatDarkMode = false;
+                SaveConfig();
+            }
 
             GUILayout.Space(8);
 
@@ -3966,6 +3971,12 @@ namespace ElysiumModMenu
             enableChatLog = DrawToggle(enableChatLog, L("Save Chat Log", "Сохранять лог чата"), 230);
             GUILayout.Space(3);
             enableChatDarkMode = DrawToggle(enableChatDarkMode, L("Dark Chat Theme", "Темная тема чата"), 230);
+            GUILayout.Space(3);
+            if (enableChatDarkMode && GUILayout.Button(L("Turn Off Dark Chat", "Выключить темный чат"), btnStyle, GUILayout.Height(24)))
+            {
+                enableChatDarkMode = false;
+                SaveConfig();
+            }
             GUILayout.Space(3);
             enableColorCommand = DrawToggle(enableColorCommand, L("Enable /color", "Разрешить /color"), 230);
             GUILayout.Space(3);

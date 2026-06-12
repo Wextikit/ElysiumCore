@@ -37,7 +37,7 @@ using Vector3 = UnityEngine.Vector3;
 using System.Runtime.CompilerServices;
 namespace ElysiumModMenu
 {
-    [BepInPlugin("com.elysiummodmenu.menu", "ElysiumModMenu", "1.2.7")]
+    [BepInPlugin("com.elysiummodmenu.menu", "ElysiumModMenu", "1.3.4")]
     public class Plugin : BasePlugin
     {
         public static Plugin Instance { get; private set; } = null!;
@@ -4944,7 +4944,7 @@ namespace ElysiumModMenu
             string contributorHex = ColorUtility.ToHtmlStringRGB(whiteMenuTheme ? GetThemeAccentColor(new Color32(109, 138, 255, 255)) : new Color32(109, 138, 255, 255));
             string dangerHex = ColorUtility.ToHtmlStringRGB(whiteMenuTheme ? GetThemeAccentColor(new Color32(231, 76, 60, 255)) : new Color32(231, 76, 60, 255));
             string safeHex = ColorUtility.ToHtmlStringRGB(whiteMenuTheme ? GetThemeAccentColor(new Color32(57, 255, 20, 255)) : new Color32(57, 255, 20, 255));
-            string versionText = "1.2.7";
+            string versionText = "1.3.4";
 
             GUIStyle textStyle = new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true, fontSize = 12 };
             textStyle.normal.textColor = whiteMenuTheme ? new Color(0.16f, 0.16f, 0.16f, 1f) : new Color(0.85f, 0.85f, 0.85f, 1f);
@@ -7370,6 +7370,7 @@ namespace ElysiumModMenu
             UnlockCosmetics();
             LoadConfig();
             LoadBanList();
+            ClearSpamErrorLogOnStartup();
             StartBackgroundAnomalyLogMonitor();
 
 
@@ -7404,6 +7405,37 @@ namespace ElysiumModMenu
         public void OnDisable()
         {
             SaveConfig();
+        }
+
+        private static void ClearSpamErrorLogOnStartup()
+        {
+            try
+            {
+                watchedLogLineCounts.Clear();
+                logBurstWindowStartedAt = -1f;
+                logBurstCooldownUntil = 0f;
+                logBurstLineCount = 0;
+                anomalyLogWatchNotified = false;
+                logMonitorNextScanAt = 0f;
+
+                string root = string.IsNullOrWhiteSpace(Plugin.ElysiumFolder)
+                    ? System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "ElysiumModMenu")
+                    : Plugin.ElysiumFolder;
+
+                if (!System.IO.Directory.Exists(root)) return;
+
+                foreach (string file in System.IO.Directory.GetFiles(root, "SpamErrorLog*.txt", System.IO.SearchOption.AllDirectories))
+                {
+                    try { System.IO.File.Delete(file); }
+                    catch { }
+                }
+
+                System.Console.WriteLine("[ElysiumModMenu] Cleared previous SpamErrorLog files and reset log monitor state.");
+            }
+            catch (Exception ex)
+            {
+                System.Console.WriteLine($"[ElysiumModMenu] Failed to clear SpamErrorLog files: {ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         public static void SendAnomalyAlert(string title, string message, string dedupeKey = null, bool waitForCompletion = false, IEnumerable<string> attachmentPaths = null)
@@ -9542,7 +9574,7 @@ namespace ElysiumModMenu
 
                     if (ElysiumModMenuGUI.showWatermark)
                     {
-                        string shimmerTitle = ElysiumModMenuGUI.ApplyMenuShimmer("ElysiumModMenu v1.2.7");
+                        string shimmerTitle = ElysiumModMenuGUI.ApplyMenuShimmer("ElysiumModMenu v1.3.4");
                         finalString = $"{shimmerTitle} • " + finalString;
                     }
 

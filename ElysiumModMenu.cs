@@ -37,7 +37,7 @@ using Vector3 = UnityEngine.Vector3;
 using System.Runtime.CompilerServices;
 namespace ElysiumModMenu
 {
-    [BepInPlugin("com.elysiummodmenu.menu", "ElysiumModMenu", "1.3.4")]
+    [BepInPlugin("com.elysiummodmenu.menu", "ElysiumModMenu", "1.3.5")]
     public class Plugin : BasePlugin
     {
         public static Plugin Instance { get; private set; } = null!;
@@ -87,6 +87,12 @@ namespace ElysiumModMenu
             if (!System.IO.File.Exists(friendEspFile))
             {
                 System.IO.File.WriteAllText(friendEspFile, "# One nickname, Friend Code, or PUID per line. Matching players will not show ESP info.\n");
+            }
+
+            string botBanFile = System.IO.Path.Combine(ElysiumFolder, "ElysiumBotBanList.txt");
+            if (!System.IO.File.Exists(botBanFile))
+            {
+                System.IO.File.WriteAllText(botBanFile, "# Auto bot ban list. Format: FriendCode|PUID|Nickname|Date|Reason\n# You can also add one nickname, Friend Code, or PUID per line to always ban matching players.\n");
             }
 
             string configPath = System.IO.Path.Combine(ElysiumFolder, "ElysiumModMenu.cfg");
@@ -154,7 +160,6 @@ namespace ElysiumModMenu
             catch { }
         }
     }
-
 
     public class ElysiumModMenuGUI : MonoBehaviour
     {
@@ -1499,6 +1504,8 @@ namespace ElysiumModMenu
             }
             GUILayout.Space(5);
             autoBanBrokenFriendCode = DrawToggle(autoBanBrokenFriendCode, L("Auto-Ban Broken FriendCode (Host)", "Авто-бан сломанного FriendCode (Хост)"), 250);
+            GUILayout.Space(5);
+            banBotsEnabled = DrawToggle(banBotsEnabled, L("Ban Bots (Host)", "Бан ботов (Хост)"), 250);
 
             GUILayout.EndVertical();
             GUILayout.Space(10);
@@ -2752,6 +2759,10 @@ namespace ElysiumModMenu
         public static bool autoBanEnabled = true;
         public static string banInput = "";
         public static bool isEditingBan = false;
+        public static List<string> botBannedEntries = new List<string>();
+        public static string botBanListPath = "";
+        public static bool banBotsEnabled = false;
+        public static readonly string[] botNameTokens = new string[] { "UCbot", "bot", "бот", "Ucбот", "sixseven", "лут", "67" };
 
         public static void LoadBanList()
         {
@@ -2805,6 +2816,92 @@ namespace ElysiumModMenu
                 System.IO.File.WriteAllLines(banListPath, bannedEntries.ToArray());
             }
             catch { }
+        }
+
+        public static void LoadBotBanList()
+        {
+            try
+            {
+                botBanListPath = System.IO.Path.Combine(Plugin.ElysiumFolder, "ElysiumBotBanList.txt");
+                if (!System.IO.File.Exists(botBanListPath))
+                {
+                    System.IO.File.Create(botBanListPath).Dispose();
+                }
+                botBannedEntries = new List<string>(System.IO.File.ReadAllLines(botBanListPath));
+            }
+            catch { }
+        }
+
+        public static void AddToBotBanList(string friendCode, string puid, string name, string reason)
+        {
+            try
+            {
+                string fc = string.IsNullOrWhiteSpace(friendCode) ? "Unknown" : friendCode.Trim();
+                string nm = string.IsNullOrWhiteSpace(name) ? "Unknown" : name.Trim();
+                string fcLower = fc.ToLower();
+                string nameLower = nm.ToLower();
+
+                bool already = false;
+                foreach (var e in botBannedEntries)
+                {
+                    if (string.IsNullOrWhiteSpace(e) || e.TrimStart().StartsWith("#")) continue;
+                    string[] parts = e.Split('|');
+                    if (parts.Length > 0 && fcLower != "unknown" && parts[0].Trim().ToLower() == fcLower) { already = true; break; }
+                    if (fcLower == "unknown" && parts.Length >= 3 && parts[2].Trim().ToLower() == nameLower) { already = true; break; }
+                }
+
+                if (!already)
+                {
+                    if (string.IsNullOrEmpty(botBanListPath)) LoadBotBanList();
+                    string date = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                    string entry = $"{fc}|{puid}|{nm}|{date}|{reason}";
+                    botBannedEntries.Add(entry);
+                    System.IO.File.AppendAllText(botBanListPath, entry + Environment.NewLine);
+                }
+            }
+            catch { }
+        }
+
+        public static bool IsBotName(string name)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(name)) return false;
+                string n = name.Trim().ToLowerInvariant();
+
+                foreach (var token in botNameTokens)
+                {
+                    if (string.IsNullOrWhiteSpace(token)) continue;
+                    if (n.Contains(token.Trim().ToLowerInvariant())) return true;
+                }
+
+                foreach (var e in botBannedEntries)
+                {
+                    if (string.IsNullOrWhiteSpace(e) || e.TrimStart().StartsWith("#")) continue;
+                    string[] parts = e.Split('|');
+                    string nick = parts.Length >= 3 ? parts[2].Trim().ToLowerInvariant() : e.Trim().ToLowerInvariant();
+                    if (!string.IsNullOrWhiteSpace(nick) && nick != "unknown" && n.Contains(nick)) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        public static bool IsBotBannedFc(string fc)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(fc)) return false;
+                string f = fc.Trim().ToLowerInvariant();
+                foreach (var e in botBannedEntries)
+                {
+                    if (string.IsNullOrWhiteSpace(e) || e.TrimStart().StartsWith("#")) continue;
+                    string[] parts = e.Split('|');
+                    if (parts.Length > 0 && parts[0].Trim().ToLowerInvariant() == f) return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         public static bool killReach = false, killAnyone = false;
@@ -5043,7 +5140,7 @@ namespace ElysiumModMenu
             string contributorHex = ColorUtility.ToHtmlStringRGB(whiteMenuTheme ? GetThemeAccentColor(new Color32(109, 138, 255, 255)) : new Color32(109, 138, 255, 255));
             string dangerHex = ColorUtility.ToHtmlStringRGB(whiteMenuTheme ? GetThemeAccentColor(new Color32(231, 76, 60, 255)) : new Color32(231, 76, 60, 255));
             string safeHex = ColorUtility.ToHtmlStringRGB(whiteMenuTheme ? GetThemeAccentColor(new Color32(57, 255, 20, 255)) : new Color32(57, 255, 20, 255));
-            string versionText = "1.3.4";
+            string versionText = "1.3.5";
 
             GUIStyle textStyle = new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true, fontSize = 12 };
             textStyle.normal.textColor = whiteMenuTheme ? new Color(0.16f, 0.16f, 0.16f, 1f) : new Color(0.85f, 0.85f, 0.85f, 1f);
@@ -7995,6 +8092,7 @@ namespace ElysiumModMenu
             UnlockCosmetics();
             LoadConfig();
             LoadBanList();
+            LoadBotBanList();
             ClearSpamErrorLogOnStartup();
             StartBackgroundAnomalyLogMonitor();
 
@@ -8865,6 +8963,36 @@ namespace ElysiumModMenu
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+                catch { }
+                try
+                {
+                    if (banBotsEnabled && AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost && PlayerControl.AllPlayerControls != null)
+                    {
+                        foreach (var pc in PlayerControl.AllPlayerControls)
+                        {
+                            if (pc == null || pc.Data == null || pc.Data.Disconnected || pc == PlayerControl.LocalPlayer) continue;
+
+                            string botName = pc.Data.PlayerName ?? "";
+                            string botFc = pc.Data.FriendCode;
+
+                            bool isBot = IsBotName(botName) || (!string.IsNullOrEmpty(botFc) && IsBotBannedFc(botFc));
+                            if (!isBot) continue;
+
+                            string banFc = string.IsNullOrEmpty(botFc) ? "Unknown" : botFc;
+                            string botPuid = "Unknown";
+                            try
+                            {
+                                var client = AmongUsClient.Instance.GetClientFromCharacter(pc);
+                                if (client != null) botPuid = GetClientPuid(client);
+                            }
+                            catch { }
+
+                            AddToBotBanList(banFc, botPuid, string.IsNullOrEmpty(botName) ? "Unknown" : botName, "Bot nickname");
+                            AmongUsClient.Instance.KickPlayer(pc.OwnerId, true);
+                            ShowNotification($"<color=#FF0000>[BAN BOTS]</color> {(string.IsNullOrEmpty(botName) ? "Unknown" : botName)} кикнут (бот).");
                         }
                     }
                 }
@@ -10220,7 +10348,7 @@ namespace ElysiumModMenu
 
                     if (ElysiumModMenuGUI.showWatermark)
                     {
-                        string shimmerTitle = ElysiumModMenuGUI.ApplyMenuShimmer("ElysiumModMenu v1.3.4");
+                        string shimmerTitle = ElysiumModMenuGUI.ApplyMenuShimmer("ElysiumModMenu v1.3.5");
                         finalString = $"{shimmerTitle} • " + finalString;
                     }
 

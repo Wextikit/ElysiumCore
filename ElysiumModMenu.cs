@@ -3061,11 +3061,11 @@ namespace ElysiumModMenu
         private bool stylesInited = false;
         private GUIStyle windowStyle, btnStyle, activeTabStyle, headerStyle, boxStyle;
         private GUIStyle sidebarStyle, sidebarBtnStyle, activeSidebarBtnStyle, titleStyle;
-        private GUIStyle toggleOnStyle, toggleOffStyle, toggleLabelStyle, safeLineStyle;
+        private GUIStyle toggleOnStyle, toggleOffStyle, toggleLabelStyle, safeLineStyle, trackOnStyle, trackOffStyle, knobStyle;
         private GUIStyle sliderStyle, sliderThumbStyle, subTabStyle, activeSubTabStyle;
         public GUIStyle inputBlockStyle;
         private Texture2D texWindowBg, texBoxBg, texBtnBg, texAccent, texSidebarBg;
-        private Texture2D texToggleOff, texToggleOn, texSliderBg, texSliderThumb, texInputBg, texColorBtn, texScrollThumb;
+        private Texture2D texToggleOff, texToggleOn, texSliderBg, texSliderThumb, texInputBg, texColorBtn, texScrollThumb, texTrackOff, texTrackOn, texKnobWhite;
         private Texture2D texMenuCard;
         private GUIStyle menuCardStyle, menuSectionTitleStyle, menuDescStyle, menuBadgeStyle, menuAccentBarStyle, menuSwatchStyle;
         private void DrawHostOnlyTab()
@@ -5839,6 +5839,36 @@ namespace ElysiumModMenu
             tex.SetPixels(pixels); tex.Apply();
         }
 
+        private void UpdateTrackTex(Texture2D tex, bool isOn, Color accentColor)
+        {
+            int width = tex.width; int height = tex.height;
+            Color transparent = new Color(0, 0, 0, 0);
+            Color offBg = new Color(0.23f, 0.23f, 0.23f, 1f);
+            Color bgColor = isOn ? accentColor : offBg;
+            float r = height / 2f;
+            float cx1 = r; float cx2 = width - r; float cy = r;
+            Color[] pixels = new Color[width * height];
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float dLeft = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(cx1, cy));
+                    float dRight = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(cx2, cy));
+                    float dRect = (x + 0.5f >= cx1 && x + 0.5f <= cx2) ? Mathf.Abs((y + 0.5f) - cy) : 9999f;
+                    float distBg = Mathf.Min(dLeft, Mathf.Min(dRight, dRect));
+                    float alphaBg = Mathf.Clamp01(r - distBg + 0.5f);
+                    if (alphaBg > 0)
+                    {
+                        Color finalCol = bgColor;
+                        finalCol.a = alphaBg;
+                        pixels[y * width + x] = finalCol;
+                    }
+                    else pixels[y * width + x] = transparent;
+                }
+            }
+            tex.SetPixels(pixels); tex.Apply();
+        }
+
         private static Color GetThemeAccentColor(Color source)
         {
             if (!whiteMenuTheme) return source;
@@ -5922,10 +5952,11 @@ namespace ElysiumModMenu
                         Color c = effectiveColor; c.a = alpha;
                         pix[y * size + x] = c;
                     }
-                }
-                texScrollThumb.SetPixels(pix); texScrollThumb.Apply();
             }
+            texScrollThumb.SetPixels(pix); texScrollThumb.Apply();
+        }
             if (texToggleOn != null) UpdateSwitchTex(texToggleOn, true, effectiveColor);
+            if (texTrackOn != null) UpdateTrackTex(texTrackOn, true, effectiveColor);
             if (windowStyle != null) windowStyle.normal.textColor = whiteMenuTheme ? new Color(0.16f, 0.16f, 0.16f, 1f) : color;
             if (headerStyle != null) headerStyle.normal.textColor = whiteMenuTheme ? new Color(0.15f, 0.15f, 0.15f, 1f) : color;
             if (menuSectionTitleStyle != null) menuSectionTitleStyle.normal.textColor = whiteMenuTheme ? new Color(0.15f, 0.15f, 0.15f, 1f) : color;
@@ -6006,6 +6037,13 @@ namespace ElysiumModMenu
             texToggleOn.hideFlags = HideFlags.HideAndDontSave;
             UpdateSwitchTex(texToggleOff, false, Color.white);
             UpdateSwitchTex(texToggleOn, true, accent);
+            texTrackOff = new Texture2D(30, 16, TextureFormat.RGBA32, false);
+            texTrackOff.hideFlags = HideFlags.HideAndDontSave;
+            texTrackOn = new Texture2D(30, 16, TextureFormat.RGBA32, false);
+            texTrackOn.hideFlags = HideFlags.HideAndDontSave;
+            UpdateTrackTex(texTrackOff, false, Color.white);
+            UpdateTrackTex(texTrackOn, true, accent);
+            texKnobWhite = MakeRoundedTex(16, Color.white, 8f);
 
             safeLineStyle = new GUIStyle();
             safeLineStyle.normal.background = MakeRoundedTex(2, isLightTheme ? new Color(0.75f, 0.75f, 0.75f, 1f) : Color.white, 0f);
@@ -6087,6 +6125,12 @@ namespace ElysiumModMenu
             toggleOffStyle.normal.background = texToggleOff;
             toggleOnStyle = new GUIStyle();
             toggleOnStyle.normal.background = texToggleOn;
+            trackOffStyle = new GUIStyle();
+            trackOffStyle.normal.background = texTrackOff;
+            trackOnStyle = new GUIStyle();
+            trackOnStyle.normal.background = texTrackOn;
+            knobStyle = new GUIStyle();
+            knobStyle.normal.background = texKnobWhite;
 
             toggleLabelStyle = new GUIStyle();
             toggleLabelStyle.normal.textColor = textMain;
@@ -6202,11 +6246,36 @@ namespace ElysiumModMenu
             return result;
         }
 
+        private static readonly Dictionary<string, float> toggleAnimStates = new Dictionary<string, float>();
+
+        private void DrawAnimatedSwitch(Rect boxRect, bool value, string animKey)
+        {
+            string key = animKey ?? "";
+            float anim;
+            if (!toggleAnimStates.TryGetValue(key, out anim)) { anim = value ? 1f : 0f; toggleAnimStates[key] = anim; }
+            if (Event.current.type != EventType.Repaint) return;
+
+            anim = Mathf.MoveTowards(anim, value ? 1f : 0f, Time.unscaledDeltaTime * 8f);
+            toggleAnimStates[key] = anim;
+            float eased = Mathf.SmoothStep(0f, 1f, anim);
+
+            float knob = boxRect.height - 4f;
+            float knobX = Mathf.Lerp(boxRect.x + 2f, boxRect.xMax - knob - 2f, eased);
+            Rect knobRect = new Rect(knobX, boxRect.y + 2f, knob, knob);
+
+            Color prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = Color.Lerp(new Color(0.80f, 0.80f, 0.84f, 1f), Color.white, eased);
+            GUI.Box(knobRect, "", knobStyle);
+            GUI.backgroundColor = prevBg;
+        }
+
         private bool DrawToggle(bool value, string text, int width = 0)
         {
             GUILayout.BeginHorizontal(GUILayout.MinWidth(width > 0 ? width : 200), GUILayout.Height(20));
 
-            bool clickedBox = GUILayout.Button("", value ? toggleOnStyle : toggleOffStyle, GUILayout.Width(30), GUILayout.Height(16));
+            Rect animSwitchRect = GUILayoutUtility.GetRect(30f, 16f, GUILayout.Width(30f), GUILayout.Height(16f));
+            bool clickedBox = GUI.Button(animSwitchRect, "", value ? trackOnStyle : trackOffStyle);
+            DrawAnimatedSwitch(animSwitchRect, value, text);
 
             GUILayout.Space(6);
 
@@ -6251,7 +6320,9 @@ namespace ElysiumModMenu
         private bool DrawHostToggle(bool value, string text, float totalWidth = 250f)
         {
             GUILayout.BeginHorizontal(GUILayout.MinWidth(totalWidth), GUILayout.Height(20));
-            bool clickedBox = GUILayout.Button("", value ? toggleOnStyle : toggleOffStyle, GUILayout.Width(30), GUILayout.Height(16));
+            Rect animSwitchRect = GUILayoutUtility.GetRect(30f, 16f, GUILayout.Width(30f), GUILayout.Height(16f));
+            bool clickedBox = GUI.Button(animSwitchRect, "", value ? trackOnStyle : trackOffStyle);
+            DrawAnimatedSwitch(animSwitchRect, value, text);
             GUILayout.Space(6);
 
             GUIStyle hostToggleTextStyle = new GUIStyle(toggleLabelStyle)

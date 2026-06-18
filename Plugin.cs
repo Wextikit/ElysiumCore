@@ -40,7 +40,7 @@ using Vector3 = UnityEngine.Vector3;
 
 namespace ElysiumModMenu
 {
-    [BepInPlugin("com.elysiummodmenu.menu", "ElysiumModMenu", "1.3.5.1")]
+    [BepInPlugin("com.elysiummodmenu.menu", "ElysiumModMenu", "1.3.6")]
     public class Plugin : BasePlugin
     {
         public static ModPlayer modClass;

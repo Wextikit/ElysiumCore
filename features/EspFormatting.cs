@@ -596,7 +596,7 @@ public static void InitializeKillCooldownOnRoundStart()
 
                     if (ElysiumModMenuGUI.showWatermark)
                     {
-                        string shimmerTitle = ElysiumModMenuGUI.ApplyMenuShimmer("ElysiumModMenu v1.3.5.1");
+                        string shimmerTitle = ElysiumModMenuGUI.ApplyMenuShimmer("ElysiumModMenu v1.3.6");
                         finalString = $"{shimmerTitle} • " + finalString;
                     }
 

@@ -225,124 +225,169 @@ public static class ChatBubbleCopyInteraction
             private const float DoubleClickSeconds = 0.35f;
             private static int lastMessageBubbleId = -1;
             private static float lastMessageClickAt = -10f;
+            private static string lastMessageText = string.Empty;
 
             public static void HandleClick(ChatController chat)
             {
                 if ((!enableChatMessageDoubleClickCopy && !enableChatNameColorCopy) || chat == null) return;
                 if (!chat.IsOpenOrOpening || !Input.GetMouseButtonDown(0)) return;
 
-                Camera camera = Camera.main;
+                Camera camera = HudManager.Instance?.UICamera ?? Camera.main;
                 if (camera == null) return;
 
-                Vector3 mouse = Input.mousePosition;
-                mouse.z = Mathf.Abs(camera.transform.position.z);
-                Vector3 worldPoint = camera.ScreenToWorldPoint(mouse);
+                Vector2 screenPoint = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
 
-                if (enableChatNameColorCopy && TryFindNameBubble(worldPoint, out ChatBubble nameBubble))
+                if (enableChatNameColorCopy && TryFindNameBubble(chat, screenPoint, camera, out ChatBubble nameBubble))
                 {
                     CopyPlayerName(nameBubble);
                     ResetMessageClick();
                     return;
                 }
 
-                if (!enableChatMessageDoubleClickCopy || !TryFindMessageBubble(worldPoint, out ChatBubble messageBubble))
+                if (!enableChatMessageDoubleClickCopy || !TryFindMessageBubble(chat, screenPoint, camera, out ChatBubble messageBubble))
                 {
                     return;
                 }
 
                 int bubbleId = messageBubble.GetInstanceID();
+                string clickedMessage = GetBubbleMessage(messageBubble);
+                if (string.IsNullOrWhiteSpace(clickedMessage)) return;
                 float now = Time.unscaledTime;
-                if (lastMessageBubbleId == bubbleId && now - lastMessageClickAt <= DoubleClickSeconds)
+                if (lastMessageBubbleId == bubbleId && lastMessageText == clickedMessage &&
+                    now - lastMessageClickAt <= DoubleClickSeconds)
                 {
-                    CopyMessage(messageBubble);
+                    CopyMessage(clickedMessage);
                     ResetMessageClick();
                     return;
                 }
 
                 lastMessageBubbleId = bubbleId;
                 lastMessageClickAt = now;
+                lastMessageText = clickedMessage;
             }
 
-            private static bool TryFindNameBubble(Vector3 worldPoint, out ChatBubble bubble)
+            private static bool TryFindNameBubble(ChatController chat, Vector2 screenPoint, Camera camera, out ChatBubble bubble)
             {
                 bubble = null;
                 ChatBubble[] bubbles = UnityEngine.Object.FindObjectsOfType<ChatBubble>();
                 if (bubbles == null) return false;
 
-                for (int i = bubbles.Length - 1; i >= 0; i--)
+                float bestDistance = float.MaxValue;
+
+                for (int i = 0; i < bubbles.Length; i++)
                 {
                     ChatBubble candidate = bubbles[i];
-                    if (candidate == null || candidate.NameText == null) continue;
-                    if (IsPointOverText(candidate.NameText, worldPoint))
+                    if (!IsBubbleInCurrentChat(chat, candidate) || candidate.NameText == null) continue;
+                    if (TryGetTextScreenRect(candidate.NameText, camera, out Rect rect) && rect.Contains(screenPoint))
                     {
-                        bubble = candidate;
-                        return true;
+                        float distance = (screenPoint - rect.center).sqrMagnitude;
+                        if (distance < bestDistance)
+                        {
+                            bestDistance = distance;
+                            bubble = candidate;
+                        }
                     }
                 }
 
-                return false;
+                return bubble != null;
             }
 
-            private static bool TryFindMessageBubble(Vector3 worldPoint, out ChatBubble bubble)
+            private static bool TryFindMessageBubble(ChatController chat, Vector2 screenPoint, Camera camera, out ChatBubble bubble)
             {
                 bubble = null;
                 ChatBubble[] bubbles = UnityEngine.Object.FindObjectsOfType<ChatBubble>();
                 if (bubbles == null) return false;
 
-                for (int i = bubbles.Length - 1; i >= 0; i--)
+                float bestDistance = float.MaxValue;
+
+                for (int i = 0; i < bubbles.Length; i++)
                 {
                     ChatBubble candidate = bubbles[i];
-                    if (candidate == null || candidate.TextArea == null) continue;
-                    if (IsPointOverText(candidate.TextArea, worldPoint))
+                    if (!IsBubbleInCurrentChat(chat, candidate) || candidate.TextArea == null) continue;
+                    if (TryGetTextScreenRect(candidate.TextArea, camera, out Rect rect) && rect.Contains(screenPoint))
                     {
-                        bubble = candidate;
-                        return true;
+                        float distance = (screenPoint - rect.center).sqrMagnitude;
+                        if (distance < bestDistance)
+                        {
+                            bestDistance = distance;
+                            bubble = candidate;
+                        }
                     }
                 }
 
-                return false;
+                return bubble != null;
             }
 
-            private static bool IsPointOverText(TMP_Text text, Vector3 worldPoint)
+            private static bool IsBubbleInCurrentChat(ChatController chat, ChatBubble bubble)
             {
-                if (text == null || !text.gameObject.activeInHierarchy) return false;
+                if (chat == null || bubble == null || !bubble.gameObject.activeInHierarchy) return false;
+
+                try
+                {
+                    Transform inner = chat.scroller?.Inner;
+                    return inner == null || bubble.transform.IsChildOf(inner);
+                }
+                catch { return false; }
+            }
+
+            private static bool TryGetTextScreenRect(TMP_Text text, Camera camera, out Rect rect)
+            {
+                rect = default;
+                if (text == null || camera == null || !text.gameObject.activeInHierarchy) return false;
 
                 try
                 {
                     text.ForceMeshUpdate();
-                    Bounds bounds = text.textBounds;
-                    if (bounds.size.sqrMagnitude > 0.0001f)
-                    {
-                        bounds.Expand(new Vector3(0.2f, 0.14f, 0.1f));
-                        Vector3 localPoint = text.transform.InverseTransformPoint(worldPoint);
-                        localPoint.z = bounds.center.z;
-                        if (bounds.Contains(localPoint)) return true;
-                    }
-                }
-                catch { }
-
-                try
-                {
                     Renderer renderer = text.GetComponent<Renderer>();
-                    if (renderer != null)
+                    if (renderer == null) return false;
+
+                    Bounds bounds = renderer.bounds;
+                    if (bounds.size.sqrMagnitude <= 0.0001f) return false;
+
+                    Vector3 min = bounds.min;
+                    Vector3 max = bounds.max;
+                    Vector3[] corners =
                     {
-                        Bounds bounds = renderer.bounds;
-                        bounds.Expand(new Vector3(0.2f, 0.14f, 0.1f));
-                        Vector3 adjustedPoint = worldPoint;
-                        adjustedPoint.z = bounds.center.z;
-                        return bounds.Contains(adjustedPoint);
+                        new Vector3(min.x, min.y, min.z), new Vector3(min.x, max.y, min.z),
+                        new Vector3(max.x, min.y, min.z), new Vector3(max.x, max.y, min.z),
+                        new Vector3(min.x, min.y, max.z), new Vector3(min.x, max.y, max.z),
+                        new Vector3(max.x, min.y, max.z), new Vector3(max.x, max.y, max.z)
+                    };
+
+                    float minX = float.MaxValue;
+                    float minY = float.MaxValue;
+                    float maxX = float.MinValue;
+                    float maxY = float.MinValue;
+                    for (int i = 0; i < corners.Length; i++)
+                    {
+                        Vector3 screen = camera.WorldToScreenPoint(corners[i]);
+                        if (screen.z <= 0f) continue;
+                        minX = Mathf.Min(minX, screen.x);
+                        minY = Mathf.Min(minY, screen.y);
+                        maxX = Mathf.Max(maxX, screen.x);
+                        maxY = Mathf.Max(maxY, screen.y);
                     }
+
+                    if (minX == float.MaxValue || maxX <= minX || maxY <= minY) return false;
+                    const float padding = 2f;
+                    rect = Rect.MinMaxRect(minX - padding, minY - padding, maxX + padding, maxY + padding);
+                    return true;
                 }
                 catch { }
 
                 return false;
             }
 
-            private static void CopyMessage(ChatBubble bubble)
+            private static string GetBubbleMessage(ChatBubble bubble)
             {
-                string message = StripRichText(bubble != null && bubble.TextArea != null ? bubble.TextArea.text : string.Empty);
-                if (string.IsNullOrWhiteSpace(message)) return;
+                return StripRichText(bubble != null && bubble.TextArea != null
+                    ? bubble.TextArea.text
+                    : string.Empty).Trim();
+            }
 
+            private static void CopyMessage(string message)
+            {
+                if (string.IsNullOrWhiteSpace(message)) return;
                 GUIUtility.systemCopyBuffer = message;
                 ElysiumModMenuGUI.ShowNotification("<color=#00FFAA>[CHAT]</color> Message copied.");
             }
@@ -380,6 +425,7 @@ public static class ChatBubbleCopyInteraction
             {
                 lastMessageBubbleId = -1;
                 lastMessageClickAt = -10f;
+                lastMessageText = string.Empty;
             }
         }
 

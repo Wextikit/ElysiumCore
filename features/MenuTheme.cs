@@ -60,6 +60,7 @@ private void LoadConfig()
                 enableChatDarkMode = Plugin.EnableChatDarkModeConfig.Value;
                 ghostChatColorHex = SanitizeHexColor(Plugin.GhostChatColorConfig.Value, "#D7B8FF");
                 enableAnomalyLogReports = Plugin.EnableAnomalyLogReportsConfig.Value;
+                throttleDefaultLogs = Plugin.ThrottleDefaultLogsConfig.Value;
                 showEspFriendCode = Plugin.ShowEspFriendCodeConfig.Value;
                 rpcSpoofDelay = Plugin.RpcSpoofDelayConfig.Value;
                 currentMenuColorIndex = Plugin.MenuColorIndexConfig.Value;

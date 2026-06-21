@@ -177,7 +177,7 @@ namespace ElysiumModMenu
                 try
                 {
                     string accentHex = ElysiumModMenuGUI.GetMenuAccentHex(false);
-                    string espLine = ElysiumModMenuGUI.BuildESPInfoLine(__instance.playerInfo);
+                    string espLine = ElysiumModMenuGUI.BuildESPInfoLine(__instance.playerInfo, 9, false);
                     if (string.IsNullOrWhiteSpace(espLine)) return;
                     string extra = $" <color=#{accentHex}><size=80%>{espLine}</size></color>";
 
@@ -209,7 +209,8 @@ namespace ElysiumModMenu
                 try
                 {
                     if (__instance == null || __instance.ShadowQuad == null || __instance.ShadowQuad.gameObject == null) return;
-                    __instance.ShadowQuad.gameObject.SetActive(!ElysiumModMenuGUI.fullBright);
+                    __instance.ShadowQuad.gameObject.SetActive(
+                        !ElysiumModMenuGUI.fullBright && !ElysiumModMenuGUI.cameraZoom);
                 }
                 catch { }
             }

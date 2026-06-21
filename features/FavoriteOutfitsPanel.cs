@@ -46,6 +46,7 @@ namespace ElysiumModMenu
 public void Update()
         {
             TickFakeStartCounter();
+            MoreLobbyInfo_GameContainer_SetupGameInfo_Postfix.UpdateStyledNames();
 
             bool isTypingOrBinding = isEditingName || isEditingLevel || isEditingFriendCode || isEditingLocalFriendCode || isEditingGhostChatColor || isEditingBan || customChatInputFocused ||
                                      isWaitingForBind || isWaitBindMassMorph || isWaitBindSpawnLobby ||

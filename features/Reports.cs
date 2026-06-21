@@ -5,6 +5,7 @@ using AmongUs.GameOptions;
 using AmongUs.InnerNet.GameDataMessages;
 using BepInEx;
 using BepInEx.Configuration;
+using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using BepInEx.Unity.IL2CPP.Utils;
 using BepInEx.Unity.IL2CPP.Utils.Collections;
@@ -42,6 +43,19 @@ namespace ElysiumModMenu
 {
     public partial class ElysiumModMenuGUI : MonoBehaviour
     {
+
+        private sealed class RawSevereLogEntry
+        {
+            public string Title;
+            public string Source;
+            public string Level;
+            public string Text;
+            public DateTime LastSeenUtc;
+            public DateTime LastSummaryUtc;
+            public int RepeatedCount;
+        }
+
+        private static readonly Dictionary<string, RawSevereLogEntry> rawSevereLogEntries = new Dictionary<string, RawSevereLogEntry>();
 
 public static Sprite LoadEmbeddedSprite(string fileName, float pixelsPerUnit = 1f)
         {
@@ -131,6 +145,11 @@ public static Sprite LoadEmbeddedSprite(string fileName, float pixelsPerUnit = 1
                 logBurstLineCount = 0;
                 anomalyLogWatchNotified = false;
                 logMonitorNextScanAt = 0f;
+                rawLogWindowStartedUtc = DateTime.MinValue;
+                rawLogSpamNextAllowedUtc = DateTime.MinValue;
+                rawLogWindowCount = 0;
+                lock (rawLogDiagnosticLock)
+                    rawSevereLogEntries.Clear();
 
                 string root = string.IsNullOrWhiteSpace(Plugin.ElysiumFolder)
                     ? System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "ElysiumModMenu")
@@ -158,9 +177,135 @@ public static Sprite LoadEmbeddedSprite(string fileName, float pixelsPerUnit = 1
             if (!DiscordStatusReporter.IsEnabled) return;
             string webhookUrl = DiscordStatusReporter.ConfiguredWebhookUrl;
             if (!DiscordStatusReporter.IsValidWebhookUrl(webhookUrl)) return;
+
             int attachmentCount = attachmentPaths == null ? 0 : attachmentPaths.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().Count();
-            System.Console.WriteLine($"[ElysiumModMenu] Sending freeze/overload logs to configured webhook. Type={title}. Attachments={attachmentCount}.");
+            DiscordStatusReporter.WriteDiagnosticConsoleStatus($"[ElysiumModMenu] Sending freeze/overload logs to configured webhook. Type={title}. Attachments={attachmentCount}.");
             DiscordStatusReporter.SendDiagnosticAlert(webhookUrl, title, message, waitForCompletion, attachmentPaths);
+        }
+
+        public static void ObserveRawDiagnosticLog(LogEventArgs eventArgs)
+        {
+            if (!enableAnomalyLogReports || eventArgs == null) return;
+
+            try
+            {
+                string source = eventArgs.Source?.SourceName ?? "Unknown";
+                if (source.Equals("ElysiumModMenu", StringComparison.OrdinalIgnoreCase) ||
+                    source.Equals("Console", StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                string text = eventArgs.Data?.ToString() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(text)) return;
+                if (text.Length > 3000) text = text.Substring(0, 3000);
+
+                bool isError = (eventArgs.Level & (LogLevel.Error | LogLevel.Fatal)) != 0;
+                bool isWarning = (eventArgs.Level & LogLevel.Warning) != 0;
+                if (isError || isWarning)
+                {
+                    string title = isError ? "Immediate error/crash log" : "Immediate warning log";
+                    string key = $"{source}\n{eventArgs.Level}\n{text}";
+                    bool sendImmediately = false;
+
+                    lock (rawLogDiagnosticLock)
+                    {
+                        DateTime now = DateTime.UtcNow;
+                        if (!rawSevereLogEntries.TryGetValue(key, out RawSevereLogEntry entry))
+                        {
+                            rawSevereLogEntries[key] = new RawSevereLogEntry
+                            {
+                                Title = title,
+                                Source = source,
+                                Level = eventArgs.Level.ToString(),
+                                Text = text,
+                                LastSeenUtc = now,
+                                LastSummaryUtc = now
+                            };
+                            sendImmediately = true;
+                        }
+                        else
+                        {
+                            entry.LastSeenUtc = now;
+                            entry.RepeatedCount++;
+                        }
+                    }
+
+                    if (sendImmediately)
+                    {
+                        string message = $"{BuildAnomalyReportDetails(false)}\nsource={source}\nlevel={eventArgs.Level}\nlog={text}";
+                        SendAnomalyAlert(title, message, isError ? "raw-error" : "raw-warning");
+                    }
+                    return;
+                }
+
+                bool reportSpam = false;
+                int observedCount = 0;
+                lock (rawLogDiagnosticLock)
+                {
+                    DateTime now = DateTime.UtcNow;
+                    if (rawLogWindowStartedUtc == DateTime.MinValue ||
+                        now - rawLogWindowStartedUtc > TimeSpan.FromSeconds(LogBurstWindowSeconds))
+                    {
+                        rawLogWindowStartedUtc = now;
+                        rawLogWindowCount = 0;
+                    }
+
+                    rawLogWindowCount++;
+                    if (rawLogWindowCount >= LogBurstLineThreshold && now >= rawLogSpamNextAllowedUtc)
+                    {
+                        observedCount = rawLogWindowCount;
+                        rawLogWindowCount = 0;
+                        rawLogWindowStartedUtc = now;
+                        rawLogSpamNextAllowedUtc = now.AddSeconds(LogBurstAlertCooldownSeconds);
+                        reportSpam = true;
+                    }
+                }
+
+                if (reportSpam)
+                {
+                    string message = $"{BuildAnomalyReportDetails(false)}\nrawLogLines={observedCount}\nwindowSeconds={LogBurstWindowSeconds}\nthreshold={LogBurstLineThreshold}\nreason=raw log spam before console throttling";
+                    SendAnomalyAlert("Abnormal raw log spam", message, "raw-log-spam");
+                }
+            }
+            catch { }
+        }
+
+        private static void FlushRawSevereLogRepeats()
+        {
+            List<RawSevereLogEntry> summaries = new List<RawSevereLogEntry>();
+
+            lock (rawLogDiagnosticLock)
+            {
+                DateTime now = DateTime.UtcNow;
+                foreach (RawSevereLogEntry entry in rawSevereLogEntries.Values)
+                {
+                    if (entry.RepeatedCount <= 0 || now - entry.LastSummaryUtc < TimeSpan.FromSeconds(5))
+                        continue;
+
+                    summaries.Add(new RawSevereLogEntry
+                    {
+                        Title = entry.Title,
+                        Source = entry.Source,
+                        Level = entry.Level,
+                        Text = entry.Text,
+                        RepeatedCount = entry.RepeatedCount
+                    });
+                    entry.RepeatedCount = 0;
+                    entry.LastSummaryUtc = now;
+                }
+
+                string[] expiredKeys = rawSevereLogEntries
+                    .Where(pair => pair.Value.RepeatedCount == 0 && now - pair.Value.LastSeenUtc > TimeSpan.FromMinutes(1))
+                    .Select(pair => pair.Key)
+                    .ToArray();
+                foreach (string key in expiredKeys)
+                    rawSevereLogEntries.Remove(key);
+            }
+
+            foreach (RawSevereLogEntry entry in summaries)
+            {
+                string message = $"{BuildAnomalyReportDetails(false)}\nsource={entry.Source}\nlevel={entry.Level}\nrepeatedCount={entry.RepeatedCount}\nlog={entry.Text}";
+                SendAnomalyAlert(entry.Title + " (repeated)", message, "raw-severe-repeat");
+            }
         }
 
         private static void StartBackgroundAnomalyLogMonitor()
@@ -231,6 +376,7 @@ public static Sprite LoadEmbeddedSprite(string fileName, float pixelsPerUnit = 1
         private static void TryDetectLogBurstTick(bool allowUnityAccess = true)
         {
             if (!enableAnomalyLogReports) return;
+            FlushRawSevereLogRepeats();
             lock (anomalyLogMonitorLock)
             {
                 try

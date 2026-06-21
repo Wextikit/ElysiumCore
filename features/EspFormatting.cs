@@ -121,13 +121,14 @@ private static bool IsEspIgnored(NetworkedPlayerInfo info)
             catch { return false; }
         }
 
-public static string BuildESPInfoLine(NetworkedPlayerInfo info)
+public static string BuildESPInfoLine(NetworkedPlayerInfo info, int customPlatformMaxLength = 13, bool includeFriendCode = true)
         {
             if (info == null) return string.Empty;
 
             int level = 0;
             string platform = "Unknown";
             bool isHost = false;
+            bool hasCustomPlatformName = false;
 
             try { level = (int)info.PlayerLevel + 1; } catch { }
 
@@ -137,12 +138,18 @@ public static string BuildESPInfoLine(NetworkedPlayerInfo info)
                 if (client != null)
                 {
                     platform = GetPlatform(client);
+                    if (IsCustomPlatformName(client, out string customPlatformName))
+                    {
+                        platform = CompactEspValue(customPlatformName, Mathf.Max(4, customPlatformMaxLength));
+                        hasCustomPlatformName = true;
+                    }
                     isHost = AmongUsClient.Instance.GetHost() == client;
                 }
             }
             catch { }
 
             if (enablePlatformSpoof &&
+                !hasCustomPlatformName &&
                 PlayerControl.LocalPlayer != null &&
                 info.PlayerId == PlayerControl.LocalPlayer.PlayerId)
             {
@@ -154,7 +161,7 @@ public static string BuildESPInfoLine(NetworkedPlayerInfo info)
             if (isHost) parts.Add("Host");
             parts.Add($"Lv:{level}");
             parts.Add(platform);
-            if (showEspFriendCode) parts.Add(fc);
+            if (includeFriendCode && showEspFriendCode) parts.Add(fc);
             return string.Join(" - ", parts);
         }
 
@@ -596,7 +603,7 @@ public static void InitializeKillCooldownOnRoundStart()
 
                     if (ElysiumModMenuGUI.showWatermark)
                     {
-                        string shimmerTitle = ElysiumModMenuGUI.ApplyMenuShimmer("ElysiumModMenu v1.3.6");
+                        string shimmerTitle = ElysiumModMenuGUI.ApplyMenuShimmer("ElysiumModMenu v1.3.8");
                         finalString = $"{shimmerTitle} • " + finalString;
                     }
 
@@ -640,12 +647,35 @@ public static void InitializeKillCooldownOnRoundStart()
             }
         }
 
+        private static bool CanPatchAssignRolesForTeam()
+        {
+            try
+            {
+                // Epic currently uses Il2CppInterop 1.5.x. Its native-to-managed
+                // wrapper crashes while boxing AssignRolesForTeam value arguments.
+                // The SelectRoles patch remains active and calls the native method
+                // directly, so role forcing still works without this wrapper.
+                string gameRoot = System.IO.Directory.GetCurrentDirectory();
+                return !System.IO.Directory.Exists(System.IO.Path.Combine(gameRoot, ".egstore"));
+            }
+            catch
+            {
+                // If the storefront cannot be detected, avoid installing the unsafe
+                // wrapper. RoleManager_SelectRoles_Patch is the portable fallback.
+                return false;
+            }
+        }
+
 [HarmonyPatch(typeof(LogicRoleSelectionNormal), "AssignRolesForTeam")]
         public static class RoleSelectionNormal_Patch
         {
+            public static bool Prepare() => ElysiumModMenuGUI.CanPatchAssignRolesForTeam();
+
             public static bool Prefix(Il2CppSystem.Collections.Generic.List<NetworkedPlayerInfo> players, IGameOptions opts, RoleTeamTypes team, ref int teamMax)
             {
-                if (!ElysiumModMenuGUI.enablePreGameRoleForce || !AmongUsClient.Instance.AmHost) return true;
+                if (!ElysiumModMenuGUI.enablePreGameRoleForce || AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost)
+                    return true;
+
                 try
                 {
                     if ((int)team == 1)
@@ -653,87 +683,125 @@ public static void InitializeKillCooldownOnRoundStart()
                         int numImps = opts.GetInt((Int32OptionNames)1);
                         var impRoleTypes = new HashSet<int> { 1, 5, 9, 18 };
                         List<byte> allForced = new List<byte>(ElysiumModMenuGUI.forcedImpostors);
-                        foreach (var kvp in ElysiumModMenuGUI.forcedPreGameRoles) if (impRoleTypes.Contains((int)kvp.Value) && !allForced.Contains(kvp.Key)) allForced.Add(kvp.Key);
+
+                        foreach (var kvp in ElysiumModMenuGUI.forcedPreGameRoles)
+                            if (impRoleTypes.Contains((int)kvp.Value) && !allForced.Contains(kvp.Key))
+                                allForced.Add(kvp.Key);
+
                         if (allForced.Count > 0) numImps = allForced.Count;
-                        else { if (numImps >= players.Count) numImps = players.Count - 1; if (numImps < 1) numImps = 1; }
+                        else
+                        {
+                            if (numImps >= players.Count) numImps = players.Count - 1;
+                            if (numImps < 1) numImps = 1;
+                        }
+
                         int assigned = 0;
                         foreach (byte impId in allForced)
                         {
                             if (players.Count == 0 || assigned >= numImps) break;
                             var targetInfo = players.ToArray().FirstOrDefault(p => p.PlayerId == impId);
-                            if (targetInfo != null && targetInfo.Object != null)
-                            {
-                                RoleTypes role = ElysiumModMenuGUI.forcedPreGameRoles.ContainsKey(impId) ? ElysiumModMenuGUI.forcedPreGameRoles[impId] : RoleTypes.Impostor;
-                                targetInfo.Object.RpcSetRole(role, false);
-                                players.Remove(targetInfo);
-                                assigned++;
-                            }
-                        }
-                        while (assigned < numImps && players.Count > 0)
-                        {
-                            int idx = UnityEngine.Random.Range(0, players.Count);
-                            players[idx].Object.RpcSetRole(RoleTypes.Impostor, false);
-                            players.RemoveAt(idx);
+                            if (targetInfo == null || targetInfo.Object == null) continue;
+
+                            RoleTypes role = ElysiumModMenuGUI.forcedPreGameRoles.TryGetValue(impId, out RoleTypes forcedRole)
+                                ? forcedRole
+                                : RoleTypes.Impostor;
+                            targetInfo.Object.RpcSetRole(role, false);
+                            players.Remove(targetInfo);
                             assigned++;
                         }
+
+                        while (assigned < numImps && players.Count > 0)
+                        {
+                            int index = UnityEngine.Random.Range(0, players.Count);
+                            players[index].Object.RpcSetRole(RoleTypes.Impostor, false);
+                            players.RemoveAt(index);
+                            assigned++;
+                        }
+
                         return false;
                     }
-                    else if ((int)team == 0)
+
+                    if ((int)team == 0)
                     {
                         var crewRoleTypes = new HashSet<int> { 0, 2, 3, 4, 8, 10, 12 };
-                        for (int i = players.Count - 1; i >= 0; i--)
+                        for (int index = players.Count - 1; index >= 0; index--)
                         {
-                            var p = players[i];
-                            if (p != null && p.Object != null)
-                            {
-                                RoleTypes role = RoleTypes.Crewmate;
-                                if (ElysiumModMenuGUI.forcedPreGameRoles.ContainsKey(p.PlayerId) && crewRoleTypes.Contains((int)ElysiumModMenuGUI.forcedPreGameRoles[p.PlayerId]))
-                                    role = ElysiumModMenuGUI.forcedPreGameRoles[p.PlayerId];
-                                p.Object.RpcSetRole(role, false);
-                                players.RemoveAt(i);
-                            }
+                            NetworkedPlayerInfo player = players[index];
+                            if (player == null || player.Object == null) continue;
+
+                            RoleTypes role = RoleTypes.Crewmate;
+                            if (ElysiumModMenuGUI.forcedPreGameRoles.TryGetValue(player.PlayerId, out RoleTypes forcedRole) &&
+                                crewRoleTypes.Contains((int)forcedRole))
+                                role = forcedRole;
+
+                            player.Object.RpcSetRole(role, false);
+                            players.RemoveAt(index);
                         }
+
                         return false;
                     }
-                    return true;
                 }
-                catch { return true; }
+                catch { }
+
+                return true;
             }
         }
 
 [HarmonyPatch(typeof(LogicRoleSelectionHnS), "AssignRolesForTeam")]
         public static class RoleSelectionHnS_Patch
         {
+            public static bool Prepare() => ElysiumModMenuGUI.CanPatchAssignRolesForTeam();
+
             public static bool Prefix(Il2CppSystem.Collections.Generic.List<NetworkedPlayerInfo> players, IGameOptions opts, RoleTeamTypes team, ref int teamMax)
             {
-                if (!ElysiumModMenuGUI.enablePreGameRoleForce || !AmongUsClient.Instance.AmHost) return true;
-                if ((int)team != 1) return true;
+                if (!ElysiumModMenuGUI.enablePreGameRoleForce || AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost || (int)team != 1)
+                    return true;
+
                 try
                 {
                     int numImps = opts.GetInt((Int32OptionNames)1);
                     var impRoleTypes = new HashSet<int> { 1, 5, 9, 18 };
                     List<byte> allForced = new List<byte>(ElysiumModMenuGUI.forcedImpostors);
-                    foreach (var kvp in ElysiumModMenuGUI.forcedPreGameRoles) if (impRoleTypes.Contains((int)kvp.Value) && !allForced.Contains(kvp.Key)) allForced.Add(kvp.Key);
+
+                    foreach (var kvp in ElysiumModMenuGUI.forcedPreGameRoles)
+                        if (impRoleTypes.Contains((int)kvp.Value) && !allForced.Contains(kvp.Key))
+                            allForced.Add(kvp.Key);
+
                     if (allForced.Count > 0) numImps = allForced.Count;
-                    else { if (numImps >= players.Count) numImps = players.Count - 1; if (numImps < 1) numImps = 1; }
+                    else
+                    {
+                        if (numImps >= players.Count) numImps = players.Count - 1;
+                        if (numImps < 1) numImps = 1;
+                    }
+
                     int assigned = 0;
                     foreach (byte impId in allForced)
                     {
                         if (players.Count == 0 || assigned >= numImps) break;
                         var targetInfo = players.ToArray().FirstOrDefault(p => p.PlayerId == impId);
-                        if (targetInfo != null) { targetInfo.Object.RpcSetRole((RoleTypes)1, false); players.Remove(targetInfo); assigned++; }
-                    }
-                    while (assigned < numImps && players.Count > 0)
-                    {
-                        int idx = UnityEngine.Random.Range(0, players.Count);
-                        players[idx].Object.RpcSetRole((RoleTypes)1, false);
-                        players.RemoveAt(idx);
+                        if (targetInfo == null || targetInfo.Object == null) continue;
+
+                        targetInfo.Object.RpcSetRole(RoleTypes.Impostor, false);
+                        players.Remove(targetInfo);
                         assigned++;
                     }
+
+                    while (assigned < numImps && players.Count > 0)
+                    {
+                        int index = UnityEngine.Random.Range(0, players.Count);
+                        players[index].Object.RpcSetRole(RoleTypes.Impostor, false);
+                        players.RemoveAt(index);
+                        assigned++;
+                    }
+
                     return false;
                 }
-                catch { return true; }
+                catch
+                {
+                    return true;
+                }
             }
         }
+
 }
 }

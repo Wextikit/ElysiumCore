@@ -40,7 +40,7 @@ using Vector3 = UnityEngine.Vector3;
 
 namespace ElysiumModMenu
 {
-    [BepInPlugin("com.elysiummodmenu.menu", "ElysiumModMenu", "1.3.7")]
+    [BepInPlugin("com.elysiummodmenu.menu", "ElysiumModMenu", "1.3.8)]
     public class Plugin : BasePlugin
     {
         public static ModPlayer modClass;
@@ -68,6 +68,7 @@ namespace ElysiumModMenu
         public static ConfigEntry<bool> EnableChatDarkModeConfig;
         public static ConfigEntry<string> GhostChatColorConfig;
         public static ConfigEntry<bool> EnableAnomalyLogReportsConfig;
+        public static ConfigEntry<bool> ThrottleDefaultLogsConfig;
         public static ConfigEntry<bool> ShowEspFriendCodeConfig;
 
         public override void Load()
@@ -133,6 +134,7 @@ namespace ElysiumModMenu
             EnableChatDarkModeConfig = MenuConfig.Bind("ElysiumModMenu.Chat", "EnableChatDarkMode", true, "Turns the custom dark chat input and bubble colors on/off.");
             GhostChatColorConfig = MenuConfig.Bind("ElysiumModMenu.Chat", "GhostChatColor", "#D7B8FF", "Hex color for visible ghost chat messages.");
             EnableAnomalyLogReportsConfig = MenuConfig.Bind("ElysiumModMenu.Diagnostics", "EnableAnomalyLogReports", true, "Yes/No: sending freeze/overload logs to the mod author. Note: this does not affect your performance, nor does it steal your data or anything like that. It is strictly needed for quick anti-cheat fixes.");
+            ThrottleDefaultLogsConfig = MenuConfig.Bind("ElysiumModMenu.Diagnostics", "ThrottleDefaultLogs", true, "Limits standard BepInEx/Unity log output to 2 queued messages per second. Set false to restore immediate default logging.");
             ShowEspFriendCodeConfig = MenuConfig.Bind("ElysiumModMenu.Visuals", "ShowEspFriendCode", true, "Show Friend Code in ESP player info.");
             ClassInjector.RegisterTypeInIl2Cpp<ElysiumModMenuGUI>();
             ClassInjector.RegisterTypeInIl2Cpp<ModPlayer>();
@@ -148,6 +150,7 @@ namespace ElysiumModMenu
 
             var harmony = new Harmony("com.elysiummodmenu.harmony");
             harmony.PatchAll();
+            RepeatedLogFilter.Install();
         }
 
         private static int DetectNativePlatformIndex()

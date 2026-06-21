@@ -98,9 +98,9 @@ private static uint levelSpoofRestoreLevel = 0;
 
 public static string customNameInput = "хыхых";
 
-public static string spoofFriendCodeInput = "crewmate01";
+public static string spoofFriendCodeInput = "----";
 
-public static string localFriendCodeInput = "Steam#Local";
+public static string localFriendCodeInput = "yourlocal#fc";
 
 public static string ghostChatColorHex = "#D7B8FF";
 
@@ -152,6 +152,14 @@ private const float LogBurstScanIntervalSeconds = 1f;
 
 private const float LogBurstAlertCooldownSeconds = 60f;
 
+private static readonly object rawLogDiagnosticLock = new object();
+
+private static DateTime rawLogWindowStartedUtc = DateTime.MinValue;
+
+private static DateTime rawLogSpamNextAllowedUtc = DateTime.MinValue;
+
+private static int rawLogWindowCount = 0;
+
 public static bool enableLocalNameSpoof = false;
 
 public static bool enableLocalFriendCodeSpoof = false;
@@ -161,6 +169,8 @@ public static bool enableFriendCodeSpoof = false;
 public static bool enablePlatformSpoof = true;
 
 public static bool enableAnomalyLogReports = true;
+
+public static bool throttleDefaultLogs = true;
 
 public static bool showEspFriendCode = true;
 
@@ -266,6 +276,17 @@ public static string banListPath = "";
 
 private Vector2 banListScroll = Vector2.zero;
 
+private Vector2 roomPlayerActionsScroll = Vector2.zero;
+
+private sealed class RoomPlayerActionEntry
+        {
+            public int ownerId;
+            public string playerName;
+            public int level;
+            public string friendCode;
+            public string puid;
+        }
+
 public static bool autoBanEnabled = true;
 
 public static string banInput = "";
@@ -280,7 +301,11 @@ public static bool banBotsEnabled = false;
 
 public static bool oldAntiCheatVersion = false;
 
-public static readonly string[] botNameTokens = new string[] { "UCbot", "bot", "бот", "Ucбот", "sixseven", "лут", "67" };
+public static readonly string[] botNameTokens = new string[]
+        {
+            "UCbot", "bot", "бот", "Ucбот", "sixseven", "лут", "67",
+            "какойтобот", "бот67", "бот69"
+        };
 
 public static void LoadBanList()
         {
@@ -595,7 +620,7 @@ private void DrawVisualsInGame()
 
             GUILayout.BeginHorizontal();
             showEspFriendCode = DrawToggle(showEspFriendCode, L("Show FC In ESP", "FriendCode в ESP"), 210);
-            GUILayout.FlexibleSpace();
+            moreLobbyInfo = DrawToggle(moreLobbyInfo, L("More Lobby Info", "Больше инфо о лобби"), 210);
             GUILayout.EndHorizontal();
             GUILayout.Space(5);
 

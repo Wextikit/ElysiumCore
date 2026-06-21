@@ -649,6 +649,13 @@ private void TryHostOnlyKillAuraTick()
 
 private void DrawAntiCheatTab()
         {
+            Event wheelEvent = Event.current;
+            if (wheelEvent != null && wheelEvent.type == EventType.ScrollWheel)
+            {
+                scrollPosition.y = Mathf.Max(0f, scrollPosition.y + wheelEvent.delta.y * 32f);
+                wheelEvent.Use();
+            }
+
             float antiCheatColumnWidth = (windowRect.width - 186f) / 2f;
             if (antiCheatColumnWidth < 282f) antiCheatColumnWidth = 282f;
 
@@ -759,7 +766,8 @@ private void DrawAntiCheatTab()
             GUILayout.EndVertical();
             GUILayout.Space(10);
 
-            GUILayout.BeginVertical(menuCardStyle, GUILayout.Width(antiCheatColumnWidth), GUILayout.ExpandHeight(true));
+            GUILayout.BeginVertical(GUILayout.Width(antiCheatColumnWidth), GUILayout.ExpandHeight(true));
+            GUILayout.BeginVertical(menuCardStyle, GUILayout.Height(285f));
             DrawMenuSectionHeader(L("BAN LIST", "БАН ЛИСТ"));
             autoBanEnabled = DrawToggle(autoBanEnabled, L("Auto-Ban Blacklisted Players", "Авто-бан игроков из списка"), 250);
             GUILayout.Space(5);
@@ -787,7 +795,7 @@ private void DrawAntiCheatTab()
             GUILayout.EndHorizontal();
             GUILayout.Space(5);
 
-            banListScroll = GUILayout.BeginScrollView(banListScroll);
+            banListScroll = GUILayout.BeginScrollView(banListScroll, GUILayout.Height(185f));
 
             if (bannedEntries.Count == 0)
             {
@@ -825,6 +833,98 @@ private void DrawAntiCheatTab()
             GUILayout.EndScrollView();
             GUILayout.EndVertical();
 
+            GUILayout.Space(8f);
+            GUILayout.BeginVertical(menuCardStyle, GUILayout.ExpandHeight(true));
+            DrawMenuSectionHeader("BAN / KICK PLAYER");
+            GUILayout.Space(4f);
+
+            List<RoomPlayerActionEntry> roomPlayers = new List<RoomPlayerActionEntry>();
+            try
+            {
+                if (PlayerControl.AllPlayerControls != null)
+                {
+                    foreach (PlayerControl player in PlayerControl.AllPlayerControls)
+                    {
+                        try
+                        {
+                            if (player == null || player == PlayerControl.LocalPlayer || player.Data == null || player.Data.Disconnected)
+                                continue;
+
+                            string playerName = Regex.Replace(player.Data.PlayerName ?? "Unknown", "<.*?>", string.Empty);
+                            if (playerName.Length > 18) playerName = playerName.Substring(0, 15) + "...";
+
+                            int level = 1;
+                            try { level = (int)player.Data.PlayerLevel + 1; } catch { }
+
+                            ClientData client = AmongUsClient.Instance.GetClientFromCharacter(player);
+                            roomPlayers.Add(new RoomPlayerActionEntry
+                            {
+                                ownerId = (int)player.OwnerId,
+                                playerName = playerName,
+                                level = level,
+                                friendCode = player.Data.FriendCode ?? string.Empty,
+                                puid = client == null ? string.Empty : GetClientPuid(client)
+                            });
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+
+            roomPlayerActionsScroll = GUILayout.BeginScrollView(roomPlayerActionsScroll, GUILayout.Height(220f));
+            foreach (RoomPlayerActionEntry player in roomPlayers)
+            {
+                GUILayout.BeginHorizontal(boxStyle);
+                GUILayout.Label($"{player.playerName}  <color=#777777>Lv:{player.level}</color>",
+                    new GUIStyle(GUI.skin.label) { fontSize = 11, richText = true }, GUILayout.ExpandWidth(true));
+
+                bool previousEnabled = GUI.enabled;
+                GUI.enabled = previousEnabled && AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost;
+
+                if (GUILayout.Button("KICK", btnStyle, GUILayout.Width(48f), GUILayout.Height(22f)))
+                {
+                    try
+                    {
+                        AmongUsClient.Instance.KickPlayer(player.ownerId, false);
+                        ShowNotification($"<color=#FFAA33>[KICK]</color> {player.playerName}");
+                    }
+                    catch { }
+                }
+
+                GUIStyle banButtonStyle = new GUIStyle(btnStyle);
+                banButtonStyle.normal.textColor = new Color(1f, 0.35f, 0.35f);
+                if (GUILayout.Button("BAN", banButtonStyle, GUILayout.Width(45f), GUILayout.Height(22f)))
+                {
+                    try
+                    {
+                        string banKey = !string.IsNullOrWhiteSpace(player.friendCode)
+                            ? player.friendCode
+                            : (!string.IsNullOrWhiteSpace(player.puid) ? "PUID:" + player.puid : "Client:" + player.ownerId);
+
+                        AddToBanList(banKey, string.IsNullOrWhiteSpace(player.puid) ? "Unknown" : player.puid,
+                            player.playerName, "Manual room ban");
+                        AmongUsClient.Instance.KickPlayer(player.ownerId, true);
+                        ShowNotification($"<color=#FF4444>[BAN]</color> {player.playerName}");
+                    }
+                    catch { }
+                }
+
+                GUI.enabled = previousEnabled;
+                GUILayout.EndHorizontal();
+            }
+
+            if (roomPlayers.Count == 0)
+            {
+                GUILayout.FlexibleSpace();
+                GUILayout.Label("<color=#777777>No players in the room.</color>",
+                    new GUIStyle(GUI.skin.label) { richText = true, alignment = TextAnchor.MiddleCenter });
+                GUILayout.FlexibleSpace();
+            }
+            GUILayout.EndScrollView();
+            GUILayout.EndVertical();
+
+            GUILayout.EndVertical();
             GUILayout.EndHorizontal();
         }
     }

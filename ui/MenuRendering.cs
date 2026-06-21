@@ -779,6 +779,10 @@ private void DrawMenuTab()
             bool prevLogAllRpcs = LogAllRPCs;
             LogAllRPCs = DrawToggle(LogAllRPCs, "Sniff All RPCs (On-Screen)", 280);
             if (prevLogAllRpcs != LogAllRPCs) menuPrefsChanged = true;
+            GUILayout.Space(6);
+            bool previousLogThrottle = throttleDefaultLogs;
+            throttleDefaultLogs = DrawToggle(throttleDefaultLogs, "Limit Console Logs (2/sec)", 280);
+            if (previousLogThrottle != throttleDefaultLogs) menuPrefsChanged = true;
             GUILayout.EndVertical();
 
             GUILayout.BeginVertical(menuCardStyle);

@@ -88,9 +88,10 @@ private static bool VentRpcOutOfRange(MessageReader part, byte callId)
 			return false;
 		}
 
+		MessageReader copy = null;
 		try
 		{
-			MessageReader copy = MessageReader.Get(part);
+			copy = MessageReader.Get(part);
 			copy.ReadPackedUInt32();
 			copy.ReadByte();
 			int ventId = copy.ReadPackedInt32();
@@ -100,6 +101,7 @@ private static bool VentRpcOutOfRange(MessageReader part, byte callId)
 		{
 			return false;
 		}
+		finally { copy?.Recycle(); }
 	}
 
 internal static bool IsRealVentId(int ventId)
@@ -233,9 +235,10 @@ private static void CleanupPendingUnknownNetIds(long now)
 
 private static bool GameDataFramingValid(MessageReader reader, byte tag)
 	{
+		MessageReader copy = null;
 		try
 		{
-			MessageReader copy = MessageReader.Get(reader);
+			copy = MessageReader.Get(reader);
 			copy.ReadInt32();
 			if (tag == 6)
 			{
@@ -251,25 +254,26 @@ private static bool GameDataFramingValid(MessageReader reader, byte tag)
 					break;
 				}
 
-				parts++;
-				byte pt = part.Tag;
-				if (pt == 0 || pt == 3 || pt > 8)
+				try
 				{
-					return false;
-				}
+					parts++;
+					byte pt = part.Tag;
+					if (pt == 0 || pt == 3 || pt > 8)
+					{
+						return false;
+					}
 
-				{
-					MessageReader idc = MessageReader.Get(part);
-					idc.ReadPackedUInt32();
-					if (pt == 2)
+					MessageReader idc = null;
+					try
 					{
-						idc.ReadByte();
+						idc = MessageReader.Get(part);
+						idc.ReadPackedUInt32();
+						if (pt == 2) idc.ReadByte();
+						else if (pt == 6) idc.ReadString();
 					}
-					else if (pt == 6)
-					{
-						idc.ReadString();
-					}
+					finally { idc?.Recycle(); }
 				}
+				finally { part.Recycle(); }
 			}
 
 			return true;
@@ -277,6 +281,10 @@ private static bool GameDataFramingValid(MessageReader reader, byte tag)
 		catch
 		{
 			return false;
+		}
+		finally
+		{
+			copy?.Recycle();
 		}
 	}
 
@@ -296,10 +304,11 @@ private static void CaptureGameDataEnvelope(MessageReader reader, byte tag, Send
 		}
 
 		int originalPosition = reader.Position;
+		MessageReader copy = null;
 		try
 		{
 			int senderClientId = GetActiveInboundSenderClientId();
-			MessageReader copy = MessageReader.Get(reader);
+			copy = MessageReader.Get(reader);
 			copy.ReadInt32();
 			if (tag == 6)
 			{
@@ -316,6 +325,8 @@ private static void CaptureGameDataEnvelope(MessageReader reader, byte tag, Send
 					break;
 				}
 
+				try
+				{
 				activeInboundGameDataParts++;
 
 				byte partTag = part.Tag;
@@ -329,7 +340,10 @@ private static void CaptureGameDataEnvelope(MessageReader reader, byte tag, Send
 				{
 					try
 					{
-						MessageReader dataCopy = MessageReader.Get(part);
+						MessageReader dataCopy = null;
+						try
+						{
+						dataCopy = MessageReader.Get(part);
 						uint dataNetId = dataCopy.ReadPackedUInt32();
 						InnerNetClient innerCheck = (InnerNetClient)AmongUsClient.Instance;
 						if (!innerCheck.allObjects.AllObjectsFast.ContainsKey(dataNetId) &&
@@ -352,6 +366,8 @@ private static void CaptureGameDataEnvelope(MessageReader reader, byte tag, Send
 							activeInboundDataFloodDetail = $"netId {dataNetId}, {dataBytes}B — DATA flood.";
 							break;
 						}
+						}
+						finally { dataCopy?.Recycle(); }
 					}
 					catch { }
 				}
@@ -367,7 +383,10 @@ private static void CaptureGameDataEnvelope(MessageReader reader, byte tag, Send
 				{
 					try
 					{
-						MessageReader spawnCopy = MessageReader.Get(part);
+						MessageReader spawnCopy = null;
+						try
+						{
+						spawnCopy = MessageReader.Get(part);
 						spawnCopy.ReadPackedUInt32();
 						int spawnOwnerId = spawnCopy.ReadPackedInt32();
 						spawnCopy.ReadByte();
@@ -412,9 +431,12 @@ private static void CaptureGameDataEnvelope(MessageReader reader, byte tag, Send
 							}
 							MessageReader compInit = spawnCopy.ReadMessage();
 							if (compInit == null) break;
+							compInit.Recycle();
 						}
 
 						if (activeInboundHasSpawnExploit) break;
+						}
+						finally { spawnCopy?.Recycle(); }
 					}
 					catch { }
 				}
@@ -437,6 +459,8 @@ private static void CaptureGameDataEnvelope(MessageReader reader, byte tag, Send
 						CreatedAtMs = Environment.TickCount64,
 					});
 				}
+				}
+				finally { part.Recycle(); }
 			}
 
 			if (rpcContexts != null)
@@ -456,6 +480,7 @@ private static void CaptureGameDataEnvelope(MessageReader reader, byte tag, Send
 		}
 		finally
 		{
+			copy?.Recycle();
 			try
 			{
 				reader.Position = originalPosition;
@@ -474,9 +499,10 @@ private static void CaptureJoinEnvelope(MessageReader reader)
 		}
 
 		int originalPosition = reader.Position;
+		MessageReader copy = null;
 		try
 		{
-			MessageReader copy = MessageReader.Get(reader);
+			copy = MessageReader.Get(reader);
 			int gameId = copy.ReadInt32();
 			if (AmongUsClient.Instance != null && ((InnerNetClient)AmongUsClient.Instance).GameId != gameId)
 			{
@@ -508,6 +534,7 @@ private static void CaptureJoinEnvelope(MessageReader reader)
 		}
 		finally
 		{
+			copy?.Recycle();
 			try
 			{
 				reader.Position = originalPosition;
@@ -527,9 +554,10 @@ private static bool TryReadRpcEnvelope(MessageReader part, out uint netId, out b
 			return false;
 		}
 
+		MessageReader copy = null;
 		try
 		{
-			MessageReader copy = MessageReader.Get(part);
+			copy = MessageReader.Get(part);
 			netId = copy.ReadPackedUInt32();
 			callId = copy.ReadByte();
 			return true;
@@ -538,6 +566,7 @@ private static bool TryReadRpcEnvelope(MessageReader part, out uint netId, out b
 		{
 			return false;
 		}
+		finally { copy?.Recycle(); }
 	}
 
 private static int TryResolveOwnerFromGameDataContent(InnerNetClient client, MessageReader reader)
@@ -545,9 +574,11 @@ private static int TryResolveOwnerFromGameDataContent(InnerNetClient client, Mes
 		if (client == null || reader == null) return -1;
 		byte tag = reader.Tag;
 		if (tag != 1 && tag != 5 && tag != 6) return -1;
+		MessageReader copy = null;
+		MessageReader subMsg = null;
 		try
 		{
-			MessageReader copy = MessageReader.Get(reader);
+			copy = MessageReader.Get(reader);
 			if (copy.Length - copy.Position < 4) return -1;
 			int gameId = copy.ReadInt32();
 			if (gameId != client.GameId) return -1;
@@ -566,7 +597,7 @@ private static int TryResolveOwnerFromGameDataContent(InnerNetClient client, Mes
 			}
 
 			if (copy.Position >= copy.Length) return -1;
-			MessageReader subMsg = copy.ReadMessage();
+			subMsg = copy.ReadMessage();
 			if (subMsg == null) return -1;
 			byte subTag = subMsg.Tag;
 			if (subTag != 1 && subTag != 2) return -1;
@@ -578,6 +609,11 @@ private static int TryResolveOwnerFromGameDataContent(InnerNetClient client, Mes
 		catch
 		{
 			return -1;
+		}
+		finally
+		{
+			subMsg?.Recycle();
+			copy?.Recycle();
 		}
 	}
 
@@ -900,6 +936,7 @@ internal static bool CheckShipStatusRpc(ShipStatus ship, int callId, MessageRead
 		}
 
 		int clientId = GetActiveInboundSenderClientId();
+		MessageReader copy = null;
 		try
 		{
 			if (callId >= 0 && callId <= byte.MaxValue && TryTakeRpcEnvelopeContext((InnerNetObject)ship, (byte)callId, out RpcEnvelopeContext rpcContext))
@@ -907,7 +944,7 @@ internal static bool CheckShipStatusRpc(ShipStatus ship, int callId, MessageRead
 				clientId = ResolveRpcSenderClientId(clientId, true, rpcContext);
 			}
 
-			MessageReader copy = MessageReader.Get(reader);
+			copy = MessageReader.Get(reader);
 			int systemId = copy.ReadByte();
 			PlayerControl actor = MessageExtensions.ReadNetObject<PlayerControl>(copy);
 			byte amount = copy.ReadByte();
@@ -934,6 +971,7 @@ internal static bool CheckShipStatusRpc(ShipStatus ship, int callId, MessageRead
 			BlockMessage(clientId, "Malformed ShipStatus RPC", error.Message);
 			return HarmonyControl.SkipOriginal;
 		}
+		finally { copy?.Recycle(); }
 
 		return HarmonyControl.Continue;
 	}
@@ -946,6 +984,7 @@ internal static bool CheckVoteKickRpc(VoteBanSystem system, int callId, MessageR
 		}
 
 		int voterClientId = GetActiveInboundSenderClientId();
+		MessageReader copy = null;
 		try
 		{
 			if (TryTakeRpcEnvelopeContext((InnerNetObject)system, (byte)callId, out RpcEnvelopeContext rpcContext))
@@ -953,7 +992,7 @@ internal static bool CheckVoteKickRpc(VoteBanSystem system, int callId, MessageR
 				voterClientId = ResolveRpcSenderClientId(voterClientId, true, rpcContext);
 			}
 
-			MessageReader copy = MessageReader.Get(reader);
+			copy = MessageReader.Get(reader);
 			copy.ReadInt32();
 			int target = copy.ReadInt32();
 
@@ -984,6 +1023,7 @@ internal static bool CheckVoteKickRpc(VoteBanSystem system, int callId, MessageR
 			BlockMessage(voterClientId, "Malformed vote-kick", error.Message);
 			return HarmonyControl.SkipOriginal;
 		}
+		finally { copy?.Recycle(); }
 
 		return HarmonyControl.Continue;
 	}

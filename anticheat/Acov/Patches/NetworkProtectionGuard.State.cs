@@ -1032,10 +1032,11 @@ private static void PruneFloodDrops()
 private static bool SpawnHasDuplicateNetId(MessageReader part)
 	{
 		if (part == null || AmongUsClient.Instance == null) return false;
+		MessageReader copy = null;
 		try
 		{
 			InnerNetClient inner = (InnerNetClient)AmongUsClient.Instance;
-			MessageReader copy = MessageReader.Get(part);
+			copy = MessageReader.Get(part);
 			copy.ReadPackedUInt32();
 			copy.ReadPackedInt32();
 			copy.ReadByte();
@@ -1055,6 +1056,7 @@ private static bool SpawnHasDuplicateNetId(MessageReader part)
 
 				MessageReader init = copy.ReadMessage();
 				if (init == null) break;
+				init.Recycle();
 			}
 
 			return false;
@@ -1063,6 +1065,7 @@ private static bool SpawnHasDuplicateNetId(MessageReader part)
 		{
 			return false;
 		}
+		finally { copy?.Recycle(); }
 	}
 
 private static bool ShouldDropDataObject(uint netId, int payloadBytes)
@@ -1182,10 +1185,11 @@ private static bool SpawnShouldDrop(MessageReader part)
 			bool fabricatedOwner = false;
 			if (part != null)
 			{
+				MessageReader copy = null;
 				try
 				{
 					InnerNetClient inner = (InnerNetClient)AmongUsClient.Instance;
-					MessageReader copy = MessageReader.Get(part);
+					copy = MessageReader.Get(part);
 					copy.ReadPackedUInt32();
 					int ownerId = copy.ReadPackedInt32();
 					fabricatedOwner = ownerId != -2 && ownerId != inner.ClientId && !IsKnownRemoteClient(ownerId);
@@ -1193,6 +1197,7 @@ private static bool SpawnShouldDrop(MessageReader part)
 				catch
 				{
 				}
+				finally { copy?.Recycle(); }
 			}
 
 			if (fabricatedOwner)

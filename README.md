@@ -228,6 +228,16 @@ Include the Elysium version, game platform, what happened, exact reproduction st
 <details>
 <summary><strong>Open screenshot gallery</strong></summary>
 
+### New captures
+
+<p><strong>Menu customization and animated character background</strong></p>
+<img width="960" alt="Elysium menu customization screen" src="docs/screenshots/menu-customization.png" />
+
+<p><strong>Visuals and ESP in a live match</strong></p>
+<img width="960" alt="Elysium visuals and ESP screen in Among Us" src="docs/screenshots/visuals-esp.png" />
+
+### Earlier captures
+
 <img width="1919" height="1079" alt="Elysium Mod Menu screenshot 1" src="https://github.com/user-attachments/assets/e295ce9d-557e-4420-8f57-37f8b79e47b1" />
 <img width="1919" height="1079" alt="Elysium Mod Menu screenshot 2" src="https://github.com/user-attachments/assets/e1cc97d3-edfb-46d4-9049-0fcd95be5226" />
 <img width="1919" height="1079" alt="Elysium Mod Menu screenshot 3" src="https://github.com/user-attachments/assets/e9062d61-424a-471f-a739-ec4508858cc0" />
